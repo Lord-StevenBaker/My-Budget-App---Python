@@ -1,0 +1,548 @@
+"""
+Data Visualization Module
+
+This module provides functionality for creating visualizations of financial data
+in the budget application, using matplotlib for chart generation.
+"""
+
+import datetime
+import calendar
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
+import io
+import os
+from typing import Dict, List, Any, Optional, Tuple, Union, ByteString
+
+class DataVisualizer:
+    """Class that handles creating visualizations of budget data"""
+    
+    def __init__(self, budget_manager):
+        """
+        Initialize the DataVisualizer with a budget manager.
+        
+        Args:
+            budget_manager: BudgetManager instance for accessing financial data
+        """
+        self.budget_manager = budget_manager
+        self.default_colors = [
+            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+        ]
+        self.figure_dpi = 100  # Default DPI for generated figures
+        
+    def _get_default_date_range(self) -> Tuple[datetime.date, datetime.date]:
+        """
+        Get a default date range for charts (last 6 months)
+        
+        Returns:
+            Tuple of (start_date, end_date)
+        """
+        today = datetime.date.today()
+        # Start from 6 months ago
+        month_6_ago = today.month - 6
+        year_offset = 0
+        if month_6_ago <= 0:
+            month_6_ago += 12
+            year_offset = -1
+            
+        start_date = datetime.date(today.year + year_offset, month_6_ago, 1)
+        end_date = today
+        
+        return start_date, end_date
+    
+    def _get_month_range(self, start_date: datetime.date, end_date: datetime.date) -> List[datetime.date]:
+        """
+        Get a list of first days of months in the given range
+        
+        Args:
+            start_date: Start date
+            end_date: End date
+            
+        Returns:
+            List of datetime.date objects representing first day of each month
+        """
+        months = []
+        current = datetime.date(start_date.year, start_date.month, 1)  # First day of start month
+        
+        while current <= end_date:
+            months.append(current)
+            # Move to next month
+            if current.month == 12:
+                current = datetime.date(current.year + 1, 1, 1)
+            else:
+                current = datetime.date(current.year, current.month + 1, 1)
+                
+        return months
+    
+    def _figure_to_bytes(self, fig: plt.Figure) -> bytes:
+        """
+        Convert a matplotlib figure to bytes
+        
+        Args:
+            fig: Matplotlib figure
+            
+        Returns:
+            Bytes representation of the figure
+        """
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=self.figure_dpi)
+        buf.seek(0)
+        return buf.getvalue()
+    
+    def create_expense_by_category_chart(self, user_id: int,
+                                     start_date: Optional[datetime.date] = None,
+                                     end_date: Optional[datetime.date] = None,
+                                     chart_type: str = 'pie') -> bytes:
+        """
+        Create a chart showing expenses by category.
+        
+        Args:
+            user_id: User ID
+            start_date: Start date for chart, defaults to 6 months ago
+            end_date: End date for chart, defaults to today
+            chart_type: Type of chart ('pie' or 'bar')
+            
+        Returns:
+            Bytes containing the chart image
+        """
+        # Get date range
+        if start_date is None or end_date is None:
+            start_date, end_date = self._get_default_date_range()
+        
+        # Get expenses by category
+        expenses_by_category = self.budget_manager.get_expenses_by_category(user_id, start_date, end_date)
+        
+        # Filter out categories with zero spending
+        expenses_by_category = {k: v for k, v in expenses_by_category.items() if v > 0}
+        
+        if not expenses_by_category:
+            # Create empty chart with message if no data
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.text(0.5, 0.5, 'No expense data available for the selected period',
+                    horizontalalignment='center', verticalalignment='center',
+                    fontsize=14, transform=ax.transAxes)
+            ax.axis('off')
+        elif chart_type.lower() == 'pie':
+            # Create pie chart
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Get categories and amounts
+            categories = list(expenses_by_category.keys())
+            amounts = list(expenses_by_category.values())
+            
+            # Calculate percentages for labels
+            total = sum(amounts)
+            percentages = [amount / total * 100 for amount in amounts]
+            
+            # Create pie chart with percentages
+            wedges, texts, autotexts = ax.pie(
+                amounts, 
+                labels=categories,
+                autopct='%1.1f%%',
+                startangle=90,
+                shadow=False,
+                colors=self.default_colors[:len(categories)],
+                wedgeprops={'edgecolor': 'w', 'linewidth': 1}
+            )
+            
+            # Style the labels and percentages
+            for text in texts:
+                text.set_fontsize(12)
+            for autotext in autotexts:
+                autotext.set_fontsize(10)
+                autotext.set_fontweight('bold')
+            
+            # Equal aspect ratio ensures that pie is drawn as a circle
+            ax.axis('equal')
+            
+            # Add title and legend
+            plt.title('Expenses by Category', fontsize=16, pad=20)
+            plt.legend(categories, loc='center left', bbox_to_anchor=(1, 0.5))
+        else:  # bar chart
+            # Create bar chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # Get categories and amounts
+            categories = list(expenses_by_category.keys())
+            amounts = list(expenses_by_category.values())
+            
+            # Create horizontal bar chart
+            y_pos = np.arange(len(categories))
+            ax.barh(y_pos, amounts, align='center', 
+                   color=self.default_colors[:len(categories)])
+            
+            # Set labels and title
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(categories)
+            ax.invert_yaxis()  # Labels read top-to-bottom
+            ax.set_xlabel('Amount ($)')
+            ax.set_title('Expenses by Category', fontsize=16)
+            
+            # Add amount labels at the end of each bar
+            for i, amount in enumerate(amounts):
+                ax.text(amount + (max(amounts) * 0.01), y_pos[i], 
+                       f'${amount:.2f}', va='center')
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Convert to bytes
+        result = self._figure_to_bytes(fig)
+        plt.close(fig)
+        return result
+    
+    def create_income_expense_chart(self, user_id: int, 
+                                  start_date: Optional[datetime.date] = None,
+                                  end_date: Optional[datetime.date] = None) -> bytes:
+        """
+        Create an income vs expenses chart.
+        
+        Args:
+            user_id: User ID
+            start_date: Start date for chart, defaults to 6 months ago
+            end_date: End date for chart, defaults to today
+            
+        Returns:
+            Bytes containing the chart image
+        """
+        # Get date range
+        if start_date is None or end_date is None:
+            start_date, end_date = self._get_default_date_range()
+        
+        # Get month range
+        months = self._get_month_range(start_date, end_date)
+        
+        # Create lists to hold data
+        incomes = []
+        expenses = []
+        month_labels = []
+        
+        # Get data for each month
+        for month_date in months:
+            # Last day of month
+            last_day = calendar.monthrange(month_date.year, month_date.month)[1]
+            month_end = datetime.date(month_date.year, month_date.month, last_day)
+            
+            # Get income and expense totals
+            income_total = self.budget_manager.get_total_income(user_id, month_date, month_end)
+            expense_total = self.budget_manager.get_total_expense(user_id, month_date, month_end)
+            
+            # Add to lists
+            incomes.append(income_total)
+            expenses.append(expense_total)
+            month_labels.append(month_date.strftime('%b %Y'))
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # X positions for bars
+        x = np.arange(len(month_labels))
+        width = 0.35
+        
+        # Create bars
+        ax.bar(x - width/2, incomes, width, label='Income', color='green', alpha=0.7)
+        ax.bar(x + width/2, expenses, width, label='Expenses', color='red', alpha=0.7)
+        
+        # Add net savings line
+        net_savings = [income - expense for income, expense in zip(incomes, expenses)]
+        ax.plot(x, net_savings, 'b-', label='Net Savings', marker='o', linewidth=2)
+        
+        # Customize chart
+        ax.set_title('Monthly Income vs Expenses', fontsize=14)
+        ax.set_xlabel('Month', fontsize=12)
+        ax.set_ylabel('Amount ($)', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(month_labels, rotation=45)
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.7)
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Convert to bytes
+        result = self._figure_to_bytes(fig)
+        plt.close(fig)
+        return result
+" " "  
+ A d d i t i o n a l   m e t h o d s   f o r   D a t a V i s u a l i z e r   c l a s s .  
+ C o p y   a n d   p a s t e   t h e s e   m e t h o d s   i n t o   t h e   d a t a _ v i s u a l i z a t i o n . p y   f i l e   t o   c o m p l e t e   t h e   i m p l e m e n t a t i o n .  
+ " " "  
+  
+ d e f   c r e a t e _ m o n t h l y _ s a v i n g s _ c h a r t ( s e l f ,   u s e r _ i d :   i n t ,  
+                                                               s t a r t _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e ,  
+                                                               e n d _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e )   - >   b y t e s :  
+         " " "  
+         C r e a t e   a   c h a r t   s h o w i n g   m o n t h l y   s a v i n g s   a n d   c u m u l a t i v e   s a v i n g s   o v e r   t i m e .  
+          
+         A r g s :  
+                 u s e r _ i d :   U s e r   I D  
+                 s t a r t _ d a t e :   S t a r t   d a t e   f o r   c h a r t ,   d e f a u l t s   t o   6   m o n t h s   a g o  
+                 e n d _ d a t e :   E n d   d a t e   f o r   c h a r t ,   d e f a u l t s   t o   t o d a y  
+                  
+         R e t u r n s :  
+                 B y t e s   c o n t a i n i n g   t h e   c h a r t   i m a g e  
+         " " "  
+         #   G e t   d a t e   r a n g e  
+         i f   s t a r t _ d a t e   i s   N o n e   o r   e n d _ d a t e   i s   N o n e :  
+                 s t a r t _ d a t e ,   e n d _ d a t e   =   s e l f . _ g e t _ d e f a u l t _ d a t e _ r a n g e ( )  
+          
+         #   G e t   m o n t h   r a n g e  
+         m o n t h s   =   s e l f . _ g e t _ m o n t h _ r a n g e ( s t a r t _ d a t e ,   e n d _ d a t e )  
+          
+         #   C r e a t e   l i s t s   t o   h o l d   d a t a  
+         m o n t h l y _ s a v i n g s   =   [ ]  
+         c u m u l a t i v e _ s a v i n g s   =   0  
+         c u m u l a t i v e _ d a t a   =   [ ]  
+         m o n t h _ l a b e l s   =   [ ]  
+          
+         #   G e t   d a t a   f o r   e a c h   m o n t h  
+         f o r   m o n t h _ d a t e   i n   m o n t h s :  
+                 #   L a s t   d a y   o f   m o n t h  
+                 l a s t _ d a y   =   c a l e n d a r . m o n t h r a n g e ( m o n t h _ d a t e . y e a r ,   m o n t h _ d a t e . m o n t h ) [ 1 ]  
+                 m o n t h _ e n d   =   d a t e t i m e . d a t e ( m o n t h _ d a t e . y e a r ,   m o n t h _ d a t e . m o n t h ,   l a s t _ d a y )  
+                  
+                 #   G e t   i n c o m e   a n d   e x p e n s e   t o t a l s  
+                 i n c o m e _ t o t a l   =   s e l f . b u d g e t _ m a n a g e r . g e t _ t o t a l _ i n c o m e ( u s e r _ i d ,   m o n t h _ d a t e ,   m o n t h _ e n d )  
+                 e x p e n s e _ t o t a l   =   s e l f . b u d g e t _ m a n a g e r . g e t _ t o t a l _ e x p e n s e ( u s e r _ i d ,   m o n t h _ d a t e ,   m o n t h _ e n d )  
+                  
+                 #   C a l c u l a t e   m o n t h l y   s a v i n g s  
+                 m o n t h _ s a v i n g s   =   i n c o m e _ t o t a l   -   e x p e n s e _ t o t a l  
+                 m o n t h l y _ s a v i n g s . a p p e n d ( m o n t h _ s a v i n g s )  
+                  
+                 #   U p d a t e   c u m u l a t i v e   s a v i n g s  
+                 c u m u l a t i v e _ s a v i n g s   + =   m o n t h _ s a v i n g s  
+                 c u m u l a t i v e _ d a t a . a p p e n d ( c u m u l a t i v e _ s a v i n g s )  
+                  
+                 #   A d d   m o n t h   l a b e l  
+                 m o n t h _ l a b e l s . a p p e n d ( m o n t h _ d a t e . s t r f t i m e ( ' % b   % Y ' ) )  
+          
+         #   C r e a t e   f i g u r e   w i t h   t w o   y - a x e s  
+         f i g ,   a x 1   =   p l t . s u b p l o t s ( f i g s i z e = ( 1 0 ,   6 ) )  
+          
+         #   S e t   u p   s e c o n d   y - a x i s   t h a t   s h a r e s   x - a x i s  
+         a x 2   =   a x 1 . t w i n x ( )  
+          
+         #   X   p o s i t i o n s  
+         x   =   n p . a r a n g e ( l e n ( m o n t h _ l a b e l s ) )  
+          
+         #   P l o t   m o n t h l y   s a v i n g s   a s   b a r s   o n   l e f t   a x i s  
+         b a r s   =   a x 1 . b a r ( x ,   m o n t h l y _ s a v i n g s ,   w i d t h = 0 . 6 ,   a l p h a = 0 . 7 ,   c o l o r = ' g r e e n ' ,  
+                                       l a b e l = ' M o n t h l y   S a v i n g s ' )  
+          
+         #   A d d   d a t a   l a b e l s   o n   t o p   o f   b a r s  
+         f o r   i ,   b a r   i n   e n u m e r a t e ( b a r s ) :  
+                 h e i g h t   =   b a r . g e t _ h e i g h t ( )  
+                 i f   h e i g h t   > =   0 :  
+                         v a   =   ' b o t t o m '  
+                         o f f s e t   =   3  
+                 e l s e :  
+                         v a   =   ' t o p '  
+                         o f f s e t   =   - 3  
+                 a x 1 . t e x t ( b a r . g e t _ x ( )   +   b a r . g e t _ w i d t h ( ) / 2 . ,   h e i g h t   +   o f f s e t ,  
+                                 f " $ { m o n t h l y _ s a v i n g s [ i ] : . 0 f } " ,   h a = ' c e n t e r ' ,   v a = v a ,   r o t a t i o n = 0 ,  
+                                 f o n t s i z e = 8 )  
+          
+         #   P l o t   c u m u l a t i v e   s a v i n g s   a s   l i n e   o n   r i g h t   a x i s  
+         a x 2 . p l o t ( x ,   c u m u l a t i v e _ d a t a ,   ' b - ' ,   m a r k e r = ' o ' ,   l i n e w i d t h = 2 ,  
+                           l a b e l = ' C u m u l a t i v e   S a v i n g s ' )  
+          
+         #   A d d   d a t a   l a b e l s   t o   l i n e  
+         f o r   i ,   v a l   i n   e n u m e r a t e ( c u m u l a t i v e _ d a t a ) :  
+                 a x 2 . t e x t ( i ,   v a l   +   ( m a x ( c u m u l a t i v e _ d a t a )   *   0 . 0 3 ) ,    
+                                 f " $ { v a l : . 0 f } " ,   h a = ' c e n t e r ' ,   f o n t s i z e = 8 )  
+          
+         #   S e t   u p   a x e s   l a b e l s   a n d   t i t l e  
+         a x 1 . s e t _ x l a b e l ( ' M o n t h ' ,   f o n t s i z e = 1 2 )  
+         a x 1 . s e t _ y l a b e l ( ' M o n t h l y   S a v i n g s   ( $ ) ' ,   f o n t s i z e = 1 2 ,   c o l o r = ' g r e e n ' )  
+         a x 2 . s e t _ y l a b e l ( ' C u m u l a t i v e   S a v i n g s   ( $ ) ' ,   f o n t s i z e = 1 2 ,   c o l o r = ' b l u e ' )  
+          
+         #   S e t   u p   x - t i c k s   a n d   g r i d  
+         a x 1 . s e t _ x t i c k s ( x )  
+         a x 1 . s e t _ x t i c k l a b e l s ( m o n t h _ l a b e l s ,   r o t a t i o n = 4 5 )  
+         a x 1 . g r i d ( T r u e ,   l i n e s t y l e = ' - - ' ,   a l p h a = 0 . 7 ,   a x i s = ' y ' )  
+          
+         #   S e t   t i t l e  
+         a x 1 . s e t _ t i t l e ( ' M o n t h l y   a n d   C u m u l a t i v e   S a v i n g s ' ,   f o n t s i z e = 1 4 )  
+          
+         #   A d d   l e g e n d s  
+         a x 1 . l e g e n d ( l o c = ' u p p e r   l e f t ' )  
+         a x 2 . l e g e n d ( l o c = ' u p p e r   r i g h t ' )  
+          
+         #   A d j u s t   l a y o u t  
+         p l t . t i g h t _ l a y o u t ( )  
+          
+         #   C o n v e r t   t o   b y t e s  
+         r e s u l t   =   s e l f . _ f i g u r e _ t o _ b y t e s ( f i g )  
+         p l t . c l o s e ( f i g )  
+         r e t u r n   r e s u l t  
+  
+ d e f   c r e a t e _ s p e n d i n g _ t r e n d s _ c h a r t ( s e l f ,   u s e r _ i d :   i n t ,  
+                                                             s t a r t _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e ,  
+                                                             e n d _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e ,  
+                                                             c a t e g o r i e s :   O p t i o n a l [ L i s t [ i n t ] ]   =   N o n e )   - >   b y t e s :  
+         " " "  
+         C r e a t e   a   c h a r t   s h o w i n g   s p e n d i n g   t r e n d s   o v e r   t i m e   b y   c a t e g o r y .  
+          
+         A r g s :  
+                 u s e r _ i d :   U s e r   I D  
+                 s t a r t _ d a t e :   S t a r t   d a t e   f o r   c h a r t ,   d e f a u l t s   t o   6   m o n t h s   a g o  
+                 e n d _ d a t e :   E n d   d a t e   f o r   c h a r t ,   d e f a u l t s   t o   t o d a y  
+                 c a t e g o r i e s :   L i s t   o f   c a t e g o r y   I D s   t o   i n c l u d e   ( d e f a u l t s   t o   a l l )  
+                  
+         R e t u r n s :  
+                 B y t e s   c o n t a i n i n g   t h e   c h a r t   i m a g e  
+         " " "  
+         #   G e t   d a t e   r a n g e  
+         i f   s t a r t _ d a t e   i s   N o n e   o r   e n d _ d a t e   i s   N o n e :  
+                 s t a r t _ d a t e ,   e n d _ d a t e   =   s e l f . _ g e t _ d e f a u l t _ d a t e _ r a n g e ( )  
+          
+         #   G e t   m o n t h   r a n g e  
+         m o n t h s   =   s e l f . _ g e t _ m o n t h _ r a n g e ( s t a r t _ d a t e ,   e n d _ d a t e )  
+          
+         #   G e t   a l l   c a t e g o r i e s   o r   f i l t e r   b y   p r o v i d e d   c a t e g o r y   I D s  
+         s e s s i o n   =   s e l f . b u d g e t _ m a n a g e r . d b . g e t _ s e s s i o n ( )  
+         t r y :  
+                 i f   c a t e g o r i e s :  
+                         d b _ c a t e g o r i e s   =   s e s s i o n . q u e r y ( s e l f . b u d g e t _ m a n a g e r . d b . C a t e g o r y ) . \  
+                                 f i l t e r ( s e l f . b u d g e t _ m a n a g e r . d b . C a t e g o r y . i d . i n _ ( c a t e g o r i e s ) ) . a l l ( )  
+                 e l s e :  
+                         d b _ c a t e g o r i e s   =   s e s s i o n . q u e r y ( s e l f . b u d g e t _ m a n a g e r . d b . C a t e g o r y ) . a l l ( )  
+                          
+                 #   C r e a t e   d i c t i o n a r y   t o   m a p   c a t e g o r y   I D s   t o   n a m e s  
+                 c a t e g o r y _ n a m e s   =   { c a t . i d :   c a t . n a m e   f o r   c a t   i n   d b _ c a t e g o r i e s }  
+         f i n a l l y :  
+                 s e s s i o n . c l o s e ( )  
+          
+         #   C r e a t e   d i c t i o n a r y   t o   t r a c k   s p e n d i n g   b y   c a t e g o r y   o v e r   t i m e  
+         c a t e g o r y _ s p e n d i n g   =   { c a t _ i d :   [ ]   f o r   c a t _ i d   i n   c a t e g o r y _ n a m e s . k e y s ( ) }  
+         m o n t h _ l a b e l s   =   [ ]  
+          
+         #   G e t   d a t a   f o r   e a c h   m o n t h  
+         f o r   m o n t h _ d a t e   i n   m o n t h s :  
+                 #   L a s t   d a y   o f   m o n t h  
+                 l a s t _ d a y   =   c a l e n d a r . m o n t h r a n g e ( m o n t h _ d a t e . y e a r ,   m o n t h _ d a t e . m o n t h ) [ 1 ]  
+                 m o n t h _ e n d   =   d a t e t i m e . d a t e ( m o n t h _ d a t e . y e a r ,   m o n t h _ d a t e . m o n t h ,   l a s t _ d a y )  
+                  
+                 #   G e t   a l l   e x p e n s e s   f o r   t h e   m o n t h  
+                 s e s s i o n   =   s e l f . b u d g e t _ m a n a g e r . d b . g e t _ s e s s i o n ( )  
+                 t r y :  
+                         e x p e n s e s   =   s e s s i o n . q u e r y ( s e l f . b u d g e t _ m a n a g e r . d b . E x p e n s e ) . \  
+                                 f i l t e r ( s e l f . b u d g e t _ m a n a g e r . d b . E x p e n s e . u s e r _ i d   = =   u s e r _ i d ,  
+                                             s e l f . b u d g e t _ m a n a g e r . d b . E x p e n s e . d a t e   > =   m o n t h _ d a t e ,  
+                                             s e l f . b u d g e t _ m a n a g e r . d b . E x p e n s e . d a t e   < =   m o n t h _ e n d ) . a l l ( )  
+                          
+                         #   G r o u p   e x p e n s e s   b y   c a t e g o r y  
+                         m o n t h _ e x p e n s e s   =   { c a t _ i d :   0   f o r   c a t _ i d   i n   c a t e g o r y _ n a m e s . k e y s ( ) }  
+                         f o r   e x p e n s e   i n   e x p e n s e s :  
+                                 i f   e x p e n s e . c a t e g o r y _ i d   i n   m o n t h _ e x p e n s e s :  
+                                         m o n t h _ e x p e n s e s [ e x p e n s e . c a t e g o r y _ i d ]   + =   e x p e n s e . a m o u n t  
+                          
+                         #   A d d   t o   s p e n d i n g   d a t a  
+                         f o r   c a t _ i d   i n   c a t e g o r y _ n a m e s . k e y s ( ) :  
+                                 c a t e g o r y _ s p e n d i n g [ c a t _ i d ] . a p p e n d ( m o n t h _ e x p e n s e s [ c a t _ i d ] )  
+                 f i n a l l y :  
+                         s e s s i o n . c l o s e ( )  
+                  
+                 #   A d d   m o n t h   l a b e l  
+                 m o n t h _ l a b e l s . a p p e n d ( m o n t h _ d a t e . s t r f t i m e ( ' % b   % Y ' ) )  
+          
+         #   C r e a t e   f i g u r e  
+         f i g ,   a x   =   p l t . s u b p l o t s ( f i g s i z e = ( 1 2 ,   6 ) )  
+          
+         #   X   p o s i t i o n s  
+         x   =   n p . a r a n g e ( l e n ( m o n t h _ l a b e l s ) )  
+          
+         #   P l o t   s p e n d i n g   f o r   e a c h   c a t e g o r y   a s   l i n e s  
+         f o r   i ,   ( c a t _ i d ,   s p e n d i n g )   i n   e n u m e r a t e ( c a t e g o r y _ s p e n d i n g . i t e m s ( ) ) :  
+                 a x . p l o t ( x ,   s p e n d i n g ,   m a r k e r = ' o ' ,   l i n e w i d t h = 2 ,    
+                               l a b e l = c a t e g o r y _ n a m e s [ c a t _ i d ] ,  
+                               c o l o r = s e l f . d e f a u l t _ c o l o r s [ i   %   l e n ( s e l f . d e f a u l t _ c o l o r s ) ] )  
+          
+         #   C u s t o m i z e   c h a r t  
+         a x . s e t _ t i t l e ( ' M o n t h l y   S p e n d i n g   T r e n d s   b y   C a t e g o r y ' ,   f o n t s i z e = 1 4 )  
+         a x . s e t _ x l a b e l ( ' M o n t h ' ,   f o n t s i z e = 1 2 )  
+         a x . s e t _ y l a b e l ( ' A m o u n t   ( $ ) ' ,   f o n t s i z e = 1 2 )  
+         a x . s e t _ x t i c k s ( x )  
+         a x . s e t _ x t i c k l a b e l s ( m o n t h _ l a b e l s ,   r o t a t i o n = 4 5 )  
+         a x . l e g e n d ( l o c = ' u p p e r   l e f t ' ,   b b o x _ t o _ a n c h o r = ( 1 ,   1 ) )  
+         a x . g r i d ( T r u e ,   l i n e s t y l e = ' - - ' ,   a l p h a = 0 . 7 )  
+          
+         #   A d j u s t   l a y o u t  
+         p l t . t i g h t _ l a y o u t ( )  
+          
+         #   C o n v e r t   t o   b y t e s  
+         r e s u l t   =   s e l f . _ f i g u r e _ t o _ b y t e s ( f i g )  
+         p l t . c l o s e ( f i g )  
+         r e t u r n   r e s u l t  
+  
+ d e f   c r e a t e _ f i n a n c i a l _ d a s h b o a r d ( s e l f ,   u s e r _ i d :   i n t ,  
+                                                         s t a r t _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e ,  
+                                                         e n d _ d a t e :   O p t i o n a l [ d a t e t i m e . d a t e ]   =   N o n e )   - >   D i c t [ s t r ,   A n y ] :  
+         " " "  
+         C r e a t e   a   c o m p l e t e   f i n a n c i a l   d a s h b o a r d   w i t h   m u l t i p l e   c h a r t s .  
+          
+         A r g s :  
+                 u s e r _ i d :   U s e r   I D  
+                 s t a r t _ d a t e :   S t a r t   d a t e   f o r   c h a r t s ,   d e f a u l t s   t o   6   m o n t h s   a g o  
+                 e n d _ d a t e :   E n d   d a t e   f o r   c h a r t s ,   d e f a u l t s   t o   t o d a y  
+                  
+         R e t u r n s :  
+                 D i c t i o n a r y   c o n t a i n i n g   c h a r t   i m a g e s   a n d   s u m m a r y   s t a t i s t i c s  
+         " " "  
+         #   G e t   d a t e   r a n g e  
+         i f   s t a r t _ d a t e   i s   N o n e   o r   e n d _ d a t e   i s   N o n e :  
+                 s t a r t _ d a t e ,   e n d _ d a t e   =   s e l f . _ g e t _ d e f a u l t _ d a t e _ r a n g e ( )  
+          
+         #   C a l c u l a t e   s u m m a r y   s t a t i s t i c s  
+         t o t a l _ i n c o m e   =   s e l f . b u d g e t _ m a n a g e r . g e t _ t o t a l _ i n c o m e ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e )  
+         t o t a l _ e x p e n s e s   =   s e l f . b u d g e t _ m a n a g e r . g e t _ t o t a l _ e x p e n s e ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e )  
+         n e t _ s a v i n g s   =   t o t a l _ i n c o m e   -   t o t a l _ e x p e n s e s  
+         s a v i n g s _ r a t e   =   ( n e t _ s a v i n g s   /   t o t a l _ i n c o m e   *   1 0 0 )   i f   t o t a l _ i n c o m e   >   0   e l s e   0  
+          
+         #   G e t   e x p e n s e   b r e a k d o w n  
+         e x p e n s e _ b y _ c a t e g o r y   =   s e l f . b u d g e t _ m a n a g e r . g e t _ e x p e n s e s _ b y _ c a t e g o r y ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e )  
+          
+         #   C r e a t e   d a s h b o a r d   c o m p o n e n t s  
+         d a s h b o a r d   =   {  
+                 ' i n c o m e _ e x p e n s e _ c h a r t ' :   s e l f . c r e a t e _ i n c o m e _ e x p e n s e _ c h a r t ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e ) ,  
+                 ' c a t e g o r y _ d i s t r i b u t i o n _ c h a r t ' :   s e l f . c r e a t e _ e x p e n s e _ b y _ c a t e g o r y _ c h a r t ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e ) ,  
+                 ' s a v i n g s _ c h a r t ' :   s e l f . c r e a t e _ m o n t h l y _ s a v i n g s _ c h a r t ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e ) ,  
+                 ' s p e n d i n g _ t r e n d s _ c h a r t ' :   s e l f . c r e a t e _ s p e n d i n g _ t r e n d s _ c h a r t ( u s e r _ i d ,   s t a r t _ d a t e ,   e n d _ d a t e ) ,  
+                 ' s u m m a r y _ s t a t s ' :   {  
+                         ' t o t a l _ i n c o m e ' :   t o t a l _ i n c o m e ,  
+                         ' t o t a l _ e x p e n s e s ' :   t o t a l _ e x p e n s e s ,  
+                         ' n e t _ s a v i n g s ' :   n e t _ s a v i n g s ,  
+                         ' s a v i n g s _ r a t e ' :   s a v i n g s _ r a t e ,  
+                         ' e x p e n s e _ b r e a k d o w n ' :   e x p e n s e _ b y _ c a t e g o r y ,  
+                         ' s t a r t _ d a t e ' :   s t a r t _ d a t e . i s o f o r m a t ( ) ,  
+                         ' e n d _ d a t e ' :   e n d _ d a t e . i s o f o r m a t ( )  
+                 }  
+         }  
+          
+         r e t u r n   d a s h b o a r d  
+  
+ d e f   e x p o r t _ c h a r t _ t o _ f i l e ( s e l f ,   c h a r t _ b y t e s :   b y t e s ,   f i l e n a m e :   s t r )   - >   b o o l :  
+         " " "  
+         E x p o r t   a   c h a r t   t o   a   f i l e .  
+          
+         A r g s :  
+                 c h a r t _ b y t e s :   B y t e s   r e p r e s e n t a t i o n   o f   t h e   c h a r t  
+                 f i l e n a m e :   P a t h   t o   s a v e   t h e   f i l e  
+                  
+         R e t u r n s :  
+                 T r u e   i f   s u c c e s s f u l ,   F a l s e   o t h e r w i s e  
+         " " "  
+         t r y :  
+                 #   M a k e   s u r e   t h e   d i r e c t o r y   e x i s t s  
+                 o s . m a k e d i r s ( o s . p a t h . d i r n a m e ( o s . p a t h . a b s p a t h ( f i l e n a m e ) ) ,   e x i s t _ o k = T r u e )  
+                  
+                 #   W r i t e   t h e   f i l e  
+                 w i t h   o p e n ( f i l e n a m e ,   ' w b ' )   a s   f :  
+                         f . w r i t e ( c h a r t _ b y t e s )  
+                  
+                 r e t u r n   T r u e  
+         e x c e p t   E x c e p t i o n   a s   e :  
+                 p r i n t ( f " E r r o r   e x p o r t i n g   c h a r t   t o   f i l e :   { e } " )  
+                 r e t u r n   F a l s e  
+ 
