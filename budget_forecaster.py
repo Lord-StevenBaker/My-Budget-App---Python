@@ -46,7 +46,7 @@ class BudgetForecaster:
         monthly_income = self.budget_manager.get_total_income(user_id, start_date, end_date)
         
         # Get expenses by category
-        expense_by_category = self.budget_manager.get_expenses_by_category(user_id, start_date, end_date)
+        expense_by_category = self.budget_manager.get_expenses_by_category_summary(user_id, start_date, end_date)
         
         # Sum up non-debt expenses 
         regular_expenses = 0

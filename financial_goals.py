@@ -117,11 +117,11 @@ class GoalTracker:
         try:
             Base.metadata.create_all(self.db.engine)
             # Log successful initialization
-            print("Financial Goals database schema initialized successfully")
+            logger.info("Financial Goals database schema initialized successfully")
         except Exception as e:
-            print(f"Error initializing Financial Goals database schema: {e}")
+            logger.error(f"Error initializing Financial Goals database schema: {e}")
             # In a production environment, we might want to re-raise or handle this differently
-            # For now, we'll just print the error but continue execution
+            # For now, we'll just log the error but continue execution
     
     def create_goal(self, user_id: int, name: str, target_amount: float, target_date: datetime.date,
                     description: str = "", category: str = "General", priority: str = "Medium") -> int:
@@ -198,63 +198,94 @@ class GoalTracker:
         finally:
             session.close()
     
-    def get_goal(self, goal_id: int) -> Optional[FinancialGoal]:
-        """
-        Get a financial goal by ID.
+    # Custom goal class for UI display with calculated properties
+    class GoalDisplayObject:
+        def __init__(self, goal):
+            # Copy all attributes from the SQLAlchemy model
+            self.id = goal.id
+            self.user_id = goal.user_id
+            self.name = goal.name
+            self.description = goal.description or ""
+            self.target_amount = goal.target_amount
+            self.current_amount = goal.current_amount
+            self.created_date = goal.created_date
+            self.target_date = goal.target_date
+            self.category = goal.category
+            self.priority = goal.priority
+            self.is_completed = goal.is_completed
+            
+            # Calculate additional properties
+            # Progress percentage
+            if self.target_amount > 0:
+                self.progress_percentage = (self.current_amount / self.target_amount) * 100
+            else:
+                self.progress_percentage = 0.0
+            
+            # Days remaining
+            today = datetime.date.today()
+            if self.target_date and self.target_date > today:
+                self.days_remaining = (self.target_date - today).days
+            else:
+                self.days_remaining = 0
+                
+            # Monthly contribution needed
+            if self.days_remaining > 0:
+                remaining_amount = self.target_amount - self.current_amount
+                months_remaining = self.days_remaining / 30  # Approximate
+                if months_remaining > 0:
+                    self.monthly_contribution_needed = remaining_amount / months_remaining
+                else:
+                    self.monthly_contribution_needed = remaining_amount
+            else:
+                self.monthly_contribution_needed = 0.0
+    
+    def get_goal(self, goal_id: int):
+        """Get a financial goal by its ID with calculated properties
         
         Args:
             goal_id: ID of the goal
             
         Returns:
-            FinancialGoal object or None if not found
+            GoalDisplayObject with calculated properties or None if not found
         """
-        session = self.db.get_session()
-        try:
-            # This uses a read-only query, but we still need to handle exceptions
-            goal = session.query(FinancialGoal).filter_by(id=goal_id).first()
+        print(f"[DEBUG] get_goal called with goal_id: {goal_id}")
+        if not goal_id:
+            logger.error(f"Invalid goal ID: {goal_id}")
+            print(f"[DEBUG] Invalid goal ID: {goal_id}")
+            return None
             
-            if goal is None:
+        session = None
+        try:
+            print(f"[DEBUG] Attempting to get database session")
+            session = self.db.get_session()
+            print(f"[DEBUG] Session created: {session is not None}")
+            if not session:
+                logger.error("Failed to get database session")
+                print(f"[DEBUG] Failed to get database session")
                 return None
                 
-            # Create a detached copy of the goal to avoid session-related issues
-            # when the session is closed but the object is still being used
-            goal_copy = FinancialGoal(
-                id=goal.id,
-                user_id=goal.user_id,
-                name=goal.name,
-                description=goal.description,
-                target_amount=goal.target_amount,
-                current_amount=goal.current_amount,
-                created_date=goal.created_date,
-                target_date=goal.target_date,
-                category=goal.category,
-                priority=goal.priority,
-                is_completed=goal.is_completed
-            )
-            
-            # Add computed properties
-            goal_copy.progress_percentage = (goal_copy.current_amount / goal_copy.target_amount * 100) if goal_copy.target_amount > 0 else 0
-            
-            # Calculate days remaining
-            if goal_copy.target_date and goal_copy.target_date > datetime.date.today():
-                goal_copy.days_remaining = (goal_copy.target_date - datetime.date.today()).days
-            else:
-                goal_copy.days_remaining = 0
-            
-            # Calculate monthly contribution needed
-            if goal_copy.days_remaining > 0:
-                months_remaining = goal_copy.days_remaining / 30.0  # Approximate
-                goal_copy.monthly_contribution_needed = (goal_copy.target_amount - goal_copy.current_amount) / months_remaining if months_remaining > 0 else 0
-            else:
-                goal_copy.monthly_contribution_needed = 0
+            print(f"[DEBUG] Querying for goal with ID: {goal_id}")
+            goal = session.query(FinancialGoal).filter_by(id=goal_id).first()
+            print(f"[DEBUG] Query result: {goal is not None}")
+            if not goal:
+                logger.warning(f"Goal with ID {goal_id} not found")
+                print(f"[DEBUG] Goal with ID {goal_id} not found in database")
+                return None
                 
-            return goal_copy
+            # Create a custom object with calculated properties
+            goal_display_obj = self.GoalDisplayObject(goal)
+            print(f"[DEBUG] Created goal display object with ID: {goal_display_obj.id}")
             
+            logger.info(f"Retrieved goal: {goal_display_obj.name}")
+            print(f"[DEBUG] Successfully retrieved goal with ID {goal_id}")
+            return goal_display_obj
         except Exception as e:
-            print(f"Error retrieving goal {goal_id}: {e}")
+            logger.error(f"Error retrieving goal with ID {goal_id}: {str(e)}")
+            print(f"[DEBUG] Error in get_goal: {str(e)}")
             return None
         finally:
-            session.close()
+            if session:
+                session.close()
     
     def get_goals_by_user(self, user_id: int, filter_completed: bool = False, 
                          category: str = None, order_by: str = 'target_date') -> List[FinancialGoal]:
@@ -270,41 +301,57 @@ class GoalTracker:
         Returns:
             List of FinancialGoal objects
         """
-        session = self.db.get_session()
+        session = None
         try:
-            # Start with basic query
-            query = session.query(FinancialGoal).filter_by(user_id=user_id)
-            
-            # Apply filters
-            if filter_completed:
-                query = query.filter_by(is_completed=False)
-            
-            if category:
-                query = query.filter_by(category=category)
-            
-            # Apply sorting
-            if order_by == 'priority':
-                # Custom priority ordering (High, Medium, Low)
-                priority_case = {
-                    'High': 1,
-                    'Medium': 2,
-                    'Low': 3
-                }
-                query = query.order_by(
-                    # This is a simplification - in a real app, we'd use case statements in SQL
-                    FinancialGoal.priority
-                )
-            elif order_by == 'name':
-                query = query.order_by(FinancialGoal.name)
-            else:  # Default to target_date
-                query = query.order_by(FinancialGoal.target_date)
-            
-            return query.all()
+            # Get database session
+            session = self.db.get_session()
+            if session is None:
+                logger.error(f"Could not create database session for user {user_id}")
+                return []
+                
+            # Check if financial_goals table exists
+            try:
+                # Start with basic query
+                query = session.query(FinancialGoal).filter_by(user_id=user_id)
+                
+                # Apply filters
+                if filter_completed:
+                    query = query.filter_by(is_completed=False)
+                
+                if category:
+                    query = query.filter_by(category=category)
+                
+                # Apply sorting
+                if order_by == 'priority':
+                    # Custom priority ordering (High, Medium, Low)
+                    priority_case = {
+                        'High': 1,
+                        'Medium': 2,
+                        'Low': 3
+                    }
+                    query = query.order_by(
+                        # This is a simplification - in a real app, we'd use case statements in SQL
+                        FinancialGoal.priority
+                    )
+                elif order_by == 'name':
+                    query = query.order_by(FinancialGoal.name)
+                else:  # Default to target_date
+                    query = query.order_by(FinancialGoal.target_date)
+                
+                goals = query.all()
+                logger.info(f"Retrieved {len(goals)} goals for user {user_id}")
+                return goals
+            except SQLAlchemyError as e:
+                logger.error(f"SQLAlchemy error retrieving goals for user {user_id}: {e}")
+                # Try to reinitialize the database
+                self._init_db()
+                return []
         except Exception as e:
-            print(f"Error retrieving goals: {e}")
+            logger.error(f"Unexpected error retrieving goals for user {user_id}: {e}")
             return []
         finally:
-            session.close()
+            if session:
+                session.close()
     
     def get_goal_projection(self, goal_id: int) -> Dict[str, Union[float, bool, datetime.date]]:
         """

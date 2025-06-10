@@ -7,6 +7,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import io
 import copy
+import logging
+from models import Category  # Import Category model
 
 
 class DebtPayoffCalculator:
@@ -41,8 +43,12 @@ class DebtPayoffCalculator:
         debts = []
         for expense in debt_expenses:
             # Get category name
-            category = session.query(expense.category).first()
-            category_name = category.name if category else "Unknown"
+            try:
+                category = session.query(Category).filter(Category.id == expense.category_id).first()
+                category_name = category.name if category else "Unknown"
+            except Exception as e:
+                logging.error(f"Error fetching category for expense {expense.id}: {str(e)}")
+                category_name = "Unknown"
             
             # Calculate interest
             monthly_rate = expense.apr / 100 / 12

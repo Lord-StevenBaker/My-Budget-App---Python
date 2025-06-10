@@ -31,6 +31,10 @@ class BudgetManager:
         return self.db.get_user(user_id)
     
     # Category management
+    def update_expense(self, expense_id, amount, category_id=None, description=None, date=None, has_apr=None, apr=None):
+        """Update an existing expense with all possible fields."""
+        return self.db.update_expense(expense_id, amount, category_id, description, date, has_apr, apr)
+    
     def create_category(self, name, description, category_type):
         """Create a new category."""
         return self.db.create_category(name, description, category_type)
@@ -101,8 +105,8 @@ class BudgetManager:
         # Get all expenses in date range
         expenses = self.db.get_expenses_by_date_range(user_id, start_date, end_date)
         
-        # Filter for only those with APR
-        debt_expenses = [expense for expense in expenses if expense.has_apr]
+        # Filter for only those with APR (has_apr is an Integer field, 1 = yes, 0 = no)
+        debt_expenses = [expense for expense in expenses if expense.has_apr == 1]
         
         return debt_expenses
         
@@ -196,7 +200,53 @@ class BudgetManager:
         expenses = self.db.get_expenses_by_date_range(user_id, start_date, end_date)
         return sum(expense.amount for expense in expenses)
     
-    def get_expenses_by_category(self, user_id, start_date=None, end_date=None):
+    def get_all_expenses(self, user_id):
+        """Get all expenses for a user with categories preloaded.
+        
+        Args:
+            user_id: ID of the user whose expenses to retrieve
+            
+        Returns:
+            List of Expense objects with category relationships preloaded
+        """
+        # Use a single session for all database operations
+        session = self.db.get_session()
+        try:
+            # Get all expenses with their categories in a single query
+            from sqlalchemy.orm import joinedload
+            expenses_query = session.query(self.db.Expense).\
+                filter(self.db.Expense.user_id == user_id).\
+                options(joinedload(self.db.Expense.category))
+                
+            return expenses_query.all()
+        finally:
+            session.close()
+    
+    def get_expenses_by_category(self, user_id, category_id):
+        """Get all expenses for a specific category with category data preloaded.
+        
+        Args:
+            user_id: ID of the user whose expenses to retrieve
+            category_id: ID of the category to filter by
+            
+        Returns:
+            List of Expense objects with category relationships preloaded
+        """
+        # Use a single session for all database operations
+        session = self.db.get_session()
+        try:
+            # Get all expenses with their categories in a single query
+            from sqlalchemy.orm import joinedload
+            expenses_query = session.query(self.db.Expense).\
+                filter(self.db.Expense.user_id == user_id,
+                       self.db.Expense.category_id == category_id).\
+                options(joinedload(self.db.Expense.category))
+                
+            return expenses_query.all()
+        finally:
+            session.close()
+    
+    def get_expenses_by_category_summary(self, user_id, start_date=None, end_date=None):
         """Get expenses grouped by category for a date range."""
         if start_date is None:
             # Default to current month
@@ -385,7 +435,7 @@ class BudgetManager:
     
     def create_expense_pie_chart(self, user_id, start_date=None, end_date=None):
         """Create a pie chart of expenses by category."""
-        expenses_by_category = self.get_expenses_by_category(user_id, start_date, end_date)
+        expenses_by_category = self.get_expenses_by_category_summary(user_id, start_date, end_date)
         
         fig = Figure(figsize=(8, 6))
         ax = fig.add_subplot(111)

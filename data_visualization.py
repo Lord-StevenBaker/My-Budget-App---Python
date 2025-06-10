@@ -111,7 +111,7 @@ class DataVisualizer:
             start_date, end_date = self._get_default_date_range()
         
         # Get expenses by category
-        expenses_by_category = self.budget_manager.get_expenses_by_category(user_id, start_date, end_date)
+        expenses_by_category = self.budget_manager.get_expenses_by_category_summary(user_id, start_date, end_date)
         
         # Filter out categories with zero spending
         expenses_by_category = {k: v for k, v in expenses_by_category.items() if v > 0}

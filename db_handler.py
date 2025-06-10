@@ -127,10 +127,10 @@ class DatabaseHandler:
         return user
     
     # Category operations
-    def add_category(self, name, description=None):
+    def add_category(self, name, description=None, category_type=None):
         """Add a new category."""
         session = self.get_session()
-        category = Category(name=name, description=description or "")
+        category = Category(name=name, description=description or "", category_type=category_type)
         session.add(category)
         session.commit()
         category_id = category.id
@@ -138,8 +138,8 @@ class DatabaseHandler:
         return category_id
         
     def create_category(self, name, description="", category_type=None):
-        """Create a new category (legacy method)."""
-        return self.add_category(name, description)
+        """Create a new category with type."""
+        return self.add_category(name, description, category_type)
         
     def get_categories(self):
         """Get all categories."""
@@ -214,20 +214,46 @@ class DatabaseHandler:
         expense_id = expense.id
         session.close()
         return expense_id
-    
+        
     def get_expense(self, expense_id):
-        """Get expense by ID."""
+        """Get a specific expense by ID."""
         session = self.get_session()
         expense = session.query(Expense).filter(Expense.id == expense_id).first()
         session.close()
         return expense
-    
-    def get_expenses_by_user(self, user_id):
-        """Get all expenses for a specific user."""
+        
+    def update_expense(self, expense_id, amount, category_id=None, description=None, date=None, has_apr=None, apr=None):
+        """Update an existing expense with provided values."""
         session = self.get_session()
-        expenses = session.query(Expense).filter(Expense.user_id == user_id).all()
+        expense = session.query(Expense).filter(Expense.id == expense_id).first()
+        
+        if not expense:
+            session.close()
+            return False
+            
+        # Update the expense with new values if provided
+        if amount is not None:
+            expense.amount = amount
+        if category_id is not None:
+            expense.category_id = category_id
+        if description is not None:
+            expense.description = description
+        if date is not None:
+            expense.date = date
+        if has_apr is not None:
+            expense.has_apr = has_apr
+        if apr is not None:
+            expense.apr = apr
+            
+        try:
+            session.commit()
+            success = True
+        except Exception as e:
+            session.rollback()
+            success = False
+            
         session.close()
-        return expenses
+        return success
     
     def get_expenses_by_date_range(self, user_id, start_date, end_date):
         """Get all expenses within a date range for a specific user."""

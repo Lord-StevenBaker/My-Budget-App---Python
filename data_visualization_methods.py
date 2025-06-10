@@ -235,7 +235,7 @@ def create_financial_dashboard(self, user_id: int,
     savings_rate = (net_savings / total_income * 100) if total_income > 0 else 0
     
     # Get expense breakdown
-    expense_by_category = self.budget_manager.get_expenses_by_category(user_id, start_date, end_date)
+    expense_by_category = self.budget_manager.get_expenses_by_category_summary(user_id, start_date, end_date)
     
     # Create dashboard components
     dashboard = {

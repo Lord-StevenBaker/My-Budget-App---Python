@@ -4,3 +4,4 @@ pandas==1.5.3
 PyQt5==5.15.9
 SQLAlchemy==2.0.19
 python-dateutil>=2.7.0
+openpyxl==3.1.5

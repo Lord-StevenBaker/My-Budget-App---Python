@@ -107,8 +107,12 @@ class IncomeTab(QWidget):
                 return
             
             # Add income to database
+            # Create a description string that includes the source
+            full_description = f"{source}: {description}" if description else source
+            
+            # Call budget_manager.add_income with the correct parameter order
             income_id = self.budget_manager.add_income(
-                self.user_id, amount, source, date, description
+                self.user_id, amount, full_description, date
             )
             
             if income_id:
@@ -155,9 +159,19 @@ class IncomeTab(QWidget):
                 # Set cell values
                 self.income_table.setItem(row_position, 0, QTableWidgetItem(str(income.id)))
                 self.income_table.setItem(row_position, 1, QTableWidgetItem(income.date.strftime("%Y-%m-%d")))
-                self.income_table.setItem(row_position, 2, QTableWidgetItem(income.source))
+                
+                # Extract source and description from the description field
+                description = income.description or ""
+                if ":" in description:
+                    source, desc_text = description.split(":", 1)
+                    desc_text = desc_text.strip()
+                else:
+                    source = description
+                    desc_text = ""
+                
+                self.income_table.setItem(row_position, 2, QTableWidgetItem(source))
                 self.income_table.setItem(row_position, 3, QTableWidgetItem(f"${income.amount:.2f}"))
-                self.income_table.setItem(row_position, 4, QTableWidgetItem(income.description or ""))
+                self.income_table.setItem(row_position, 4, QTableWidgetItem(desc_text))
                 
             # Update summary
             total_income = self.budget_manager.get_total_income(self.user_id, start_date, end_date)

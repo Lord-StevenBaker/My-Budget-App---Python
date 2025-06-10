@@ -150,7 +150,7 @@ class ReportsTab(QWidget):
         end_date = self.end_date.date().toPyDate()
         
         # Get expense data
-        expenses_by_category = self.budget_manager.get_expenses_by_category(
+        expenses_by_category = self.budget_manager.get_expenses_by_category_summary(
             self.user_id, start_date, end_date
         )
         

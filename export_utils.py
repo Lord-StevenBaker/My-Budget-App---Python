@@ -24,14 +24,16 @@ class DataExporter:
         
         # Create filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"income_data_{timestamp}.{format}"
+        # Use .xlsx extension for excel format
+        extension = "xlsx" if format == "excel" else format
+        filename = f"income_data_{timestamp}.{extension}"
         filepath = os.path.join(self.export_dir, filename)
         
         # Export based on format
         if format == 'csv':
             income_df.to_csv(filepath, index=False)
         elif format == 'excel':
-            income_df.to_excel(filepath, index=False)
+            income_df.to_excel(filepath, index=False, engine='openpyxl')
         else:
             return None, f"Unsupported format: {format}"
         
@@ -47,14 +49,16 @@ class DataExporter:
         
         # Create filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"expense_data_{timestamp}.{format}"
+        # Use .xlsx extension for excel format
+        extension = "xlsx" if format == "excel" else format
+        filename = f"expense_data_{timestamp}.{extension}"
         filepath = os.path.join(self.export_dir, filename)
         
         # Export based on format
         if format == 'csv':
             expense_df.to_csv(filepath, index=False)
         elif format == 'excel':
-            expense_df.to_excel(filepath, index=False)
+            expense_df.to_excel(filepath, index=False, engine='openpyxl')
         else:
             return None, f"Unsupported format: {format}"
         
@@ -88,14 +92,16 @@ class DataExporter:
         
         # Create filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"budget_data_{year}_{month:02d}_{timestamp}.{format}"
+        # Use .xlsx extension for excel format
+        extension = "xlsx" if format == "excel" else format
+        filename = f"budget_data_{year}_{month:02d}_{timestamp}.{extension}"
         filepath = os.path.join(self.export_dir, filename)
         
         # Export based on format
         if format == 'csv':
             budget_df.to_csv(filepath, index=False)
         elif format == 'excel':
-            budget_df.to_excel(filepath, index=False)
+            budget_df.to_excel(filepath, index=False, engine='openpyxl')
         else:
             return None, f"Unsupported format: {format}"
         
@@ -111,14 +117,16 @@ class DataExporter:
         
         # Create filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"debt_analysis_{timestamp}.{format}"
+        # Use .xlsx extension for excel format
+        extension = "xlsx" if format == "excel" else format
+        filename = f"debt_analysis_{timestamp}.{extension}"
         filepath = os.path.join(self.export_dir, filename)
         
         # Export based on format
         if format == 'csv':
             debt_df.to_csv(filepath, index=False)
         elif format == 'excel':
-            debt_df.to_excel(filepath, index=False)
+            debt_df.to_excel(filepath, index=False, engine='openpyxl')
         else:
             return None, f"Unsupported format: {format}"
         
@@ -134,14 +142,16 @@ class DataExporter:
         
         # Create filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"monthly_summary_{timestamp}.{format}"
+        # Use .xlsx extension for excel format
+        extension = "xlsx" if format == "excel" else format
+        filename = f"monthly_summary_{timestamp}.{extension}"
         filepath = os.path.join(self.export_dir, filename)
         
         # Export based on format
         if format == 'csv':
             summary_df.to_csv(filepath, index=False)
         elif format == 'excel':
-            summary_df.to_excel(filepath, index=False)
+            summary_df.to_excel(filepath, index=False, engine='openpyxl')
         else:
             return None, f"Unsupported format: {format}"
         

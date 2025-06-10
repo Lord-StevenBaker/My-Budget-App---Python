@@ -203,7 +203,7 @@ class DashboardTab(QWidget):
         last_day = calendar.monthrange(today.year, today.month)[1]
         month_end = datetime.date(today.year, today.month, last_day)
         
-        expenses_by_category = self.budget_manager.get_expenses_by_category(
+        expenses_by_category = self.budget_manager.get_expenses_by_category_summary(
             self.user_id, month_start, month_end
         )
         
